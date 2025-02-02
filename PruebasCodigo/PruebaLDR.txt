@@ -1,0 +1,14 @@
+#define PIN_LDR 34  // Pin ADC donde conectamos la LDR
+
+void setup() {
+    Serial.begin(115200);
+}
+
+void loop() {
+    int lectura = analogRead(PIN_LDR);  // Leer el valor analógico (0-4095)
+    float voltaje = lectura * (3.3 / 4095.0);  // Convertir a voltaje
+    Serial.print("Lectura ADC: "); Serial.print(lectura);
+    Serial.print(" - Voltaje: "); Serial.println(voltaje);
+    
+    delay(500);  // Esperar medio segundo
+}

@@ -1,0 +1,36 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128  // Ancho de la pantalla OLED
+#define SCREEN_HEIGHT 64  // Alto de la pantalla OLED
+#define OLED_RESET    -1  // Reset pin (no se usa en la mayoría de las pantallas OLED I2C)
+#define SCREEN_ADDRESS 0x3C  // Dirección I2C de la pantalla OLED
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+void setup() {
+    Wire.begin(21, 22);  // Configura los pines I2C (SDA, SCL)
+    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+        Serial.println(F("Error al iniciar la pantalla OLED"));
+        for (;;);
+    }
+    display.clearDisplay();
+    display.setTextSize(0.5);
+    display.setTextColor(SSD1306_WHITE);
+    
+}
+
+void loop() {
+    display.clearDisplay();
+    display.setCursor(5, 10);
+    display.println("Hola mundo");
+    display.display();
+    delay(2000);
+    
+    display.clearDisplay();
+    display.setCursor(5, 10);
+    display.println("Adios mundo");
+    display.display();
+    delay(2000);
+}

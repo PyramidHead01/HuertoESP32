@@ -1,0 +1,15 @@
+#define SENSOR_PIN 34  // Pin analógico del ESP32 donde conectamos el sensor
+
+void setup() {
+    Serial.begin(115200);
+}
+
+void loop() {
+    int lectura = analogRead(SENSOR_PIN); // Leer valor del sensor
+    float humedad = map(lectura, 4095, 0, 0, 100); // Convertir a porcentaje
+    Serial.print("Humedad del suelo: ");
+    Serial.print(humedad);
+    Serial.println("%");
+    
+    delay(2000); // Espera de 2 segundos entre lecturas
+}
