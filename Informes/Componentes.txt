@@ -1,0 +1,39 @@
+Panel solar 12v 10w
+
+XL4015
+TP4056
+BATERIA LITIO 3.7v 3000mAh
+
+Extra
+	Pulsador
+	Leds
+	Interruptor
+	OLED 0.96” I2C 128x64
+	ESP 32
+
+Condensador
+	10v
+	16v
+	Ceramico 100nf 50v
+
+Diodos
+	1N5822
+	1N5817
+
+Resistencias
+	100kohms
+	10Kohms
+	47kohms
+	330ohms
+	
+Fusible termico
+	1.1A
+	2A
+	3A
+	5A
+	
+DETECTORES
+	DHT22
+	LDR 5516
+	Sensor de humedad del suelo
+	BMP280

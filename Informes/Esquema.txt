@@ -1,0 +1,70 @@
+SISTEMA ALIMENTACION
+	
+	Panel solar (10W 12V)
+		+ -> Fusible 1.1A -> Diodo 1N5822 -> +IN (XL4015)
+		- -> -IN (XL4015)
+		
+	XL4015 
+		+OUT -> +IN TP4056
+		(Condensador 1000uF 16V + 0.1uF 50V) En paralelo entre los dos out
+		-OUT -> -IN TP4056
+		
+	TP4056
+		+B -> + Bateria Litio
+		-B -> - Bateria Litio
+		(Bateria de 3.7V/3000mAh)
+		+OUT -> Fusible 1.1A -> 1N5817 -> 3.3V ESP32
+		
+		(Al final poner entre los dos cables condensadores 470uF 10V + 0.1uF 50V)
+		-OUT -> GND ESP32
+		
+MEDICION BATERIA
+	+OUT TP4056 -> 100k ohm -> GPIO35 ESP32
+	GPIO35 -> 47 kohm -> GND ESP32
+		
+		
+SENSORES
+	DHT22
+		+ -> 3.3V ESP32
+		OUT -> D4 ESP32
+		- -> GND ESP32
+		
+	BMP280
+		VCC -> 3.3V ESP32
+		GND -> GND ESP32
+		SCL -> D22 ESP32
+		SDA -> D21 ESP32
+		(Entre VCC y GND condensador 0.1uF 50V lo mas cerca posible al sensor)
+
+	SENSOR HUMEDAD
+		GND -> GND ESP32
+		VCC -> 3.3V ESP32
+		AUOT -> D34 ESP32
+		(Entre VCC y GND condensador 0.1uF 50V lo mas cerca posible al sensor)
+		
+	LDR (Sensor luz)
+		- -> Resistencia 10K ohms -> GND ESP32
+		- -> VP ESP32
+		+ -> 3.3V ESP32
+PANTALLA
+
+	OLED
+		GND -> GND ESP32
+		VCC -> 3.3V ESP32
+		SCL -> D22 ESP32
+		SDA -> D21 ESP32
+	(La oled y al BMP pueden tener las mismas conexiones)
+	(Entre VCC y GND condensador 0.1uF 50V lo mas cerca posible al sensor)
+	
+EXTRAS
+	PULSADOR
+		GND ESP32
+		Res 10K ohm -> GPIO15 (Pull up)
+		
+	INTERRUPTOR (Elegir alguno de los dos)
+		Bateria -> B+ TP4056
+		+OUT TP4056 -> Resto Circuito
+		
+	LEDS
+		+ -> GPIO libre
+		- -> Res 330 ohm -> GND
