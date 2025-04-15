@@ -5,6 +5,15 @@
 #include <SPI.h>
 #include <Adafruit_BMP280.h>
 
+//TELEGRAM
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include "secrets.h"
+WiFiClientSecure client;
+UniversalTelegramBot bot(BOT_TOKEN, client);
+
+
 // Definir pines
 #define DHTPIN 4       // GPIO4 para el DHT22
 #define DHTTYPE DHT22  // Tipo de sensor
@@ -29,6 +38,25 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 void setup() {
   Serial.begin(115200);
   dht.begin();
+
+  //CONECTARSE A WIFI
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(SECRET_SSID, SECRET_PASS);
+  client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected"); 
+
+  //LANZANDO MENSAJE DE TELEGRAM
+  bool success = bot.sendMessage(CHAT_ID, "Hello World!");
+  if (success) {
+    Serial.println("Mensaje enviado!");
+  } else {
+    Serial.println("Error al enviar mensaje");
+  }
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);  // Botón con pull-up interno
 
@@ -104,33 +132,13 @@ void loop() {
   Serial.print("Humedad del suelo: "); Serial.print(soilPercentage); Serial.println("%");
   Serial.println("=========================");
 
-  // Mostrar datos en la OLED
-  //display.clearDisplay();
-  //display.setCursor(0, 0);
-  //display.setTextSize(1);
-
-  //display.print("Temp: "); display.print((temperatureDHT+bmp.readTemperature())/2); display.println("C");
-
-  //display.print("Hum: "); display.print(humidityDHT); display.println(" %");
-
-  //BMP
-  //display.print(F("Presion: "));display.print(bmp.readPressure());display.println(" Pa");
-  //display.print(F("Altitud: "));display.print(bmp.readAltitude(1013.25)); display.println(" m");
-
-  //display.println("-------------------");
-  //display.print("Luz: "); display.print(voltageLDR); display.println(" V");
-  //display.print("H. Suelo: "); display.print(soilPercentage); display.println(" %");
-
-  //display.display();
-  //delay(2000);
-
+  //OLED
   // Si se presiona el botón, activamos la pantalla por 1 minuto
   if (digitalRead(BUTTON_PIN) == LOW && !oledActive) {
     oledActive = true;
     oledOnTime = millis();
     display.ssd1306_command(SSD1306_DISPLAYON);  // Encender OLED
   }
-
   // Si está activa y ya pasó un minuto, la apagamos
   if (oledActive && (millis() - oledOnTime > 30000)) {
     oledActive = false;
