@@ -10,10 +10,15 @@
 #define DHTTYPE DHT22  // Tipo de sensor
 #define LDR_PIN 36     // GPIO36 para el LDR
 #define SOIL_PIN 34    // GPIO34 para el sensor de humedad del suelo
+#define BUTTON_PIN 15  // GPIO15
+
 
 // Dimensiones de la pantalla OLED
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
+// Para encender apagar la oled
+unsigned long oledOnTime = 0;
+bool oledActive = false;
 
 Adafruit_BMP280 bmp; // I2C
 
@@ -24,6 +29,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 void setup() {
   Serial.begin(115200);
   dht.begin();
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);  // Botón con pull-up interno
 
   // Inicializar OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -57,9 +64,17 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(10, 10);
-  display.println("Sistema listo!");
+  display.println("Bienvenido Sr.Hugo");
+  display.println("LISTO archivos");
   display.display();
   delay(2000);
+  display.println("LISTO duendes magicos");
+  display.display();
+  delay(2000);
+  display.println("LISTO reservas de orin");
+  display.display();
+  delay(2000);
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
 void loop() {
@@ -72,6 +87,7 @@ void loop() {
 
   int soilValue = analogRead(SOIL_PIN);
   float soilPercentage = map(soilValue, 4095, 1000, 0, 100); // Ajustar según calibración
+  soilPercentage = constrain(soilPercentage, 0, 100); // Limitar el valor a un rango de 0-100 para evitar lecturas mayores a 100
 
   // Mostrar en el monitor serie
   Serial.println("=== Datos del Huerto ===");
@@ -89,22 +105,62 @@ void loop() {
   Serial.println("=========================");
 
   // Mostrar datos en la OLED
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.setTextSize(1);
+  //display.clearDisplay();
+  //display.setCursor(0, 0);
+  //display.setTextSize(1);
 
-  display.print("Temp: "); display.print((temperatureDHT+bmp.readTemperature())/2); display.println("C");
+  //display.print("Temp: "); display.print((temperatureDHT+bmp.readTemperature())/2); display.println("C");
 
-  display.print("Hum: "); display.print(humidityDHT); display.println(" %");
+  //display.print("Hum: "); display.print(humidityDHT); display.println(" %");
 
   //BMP
-  display.print(F("Presion: "));display.print(bmp.readPressure());display.println(" Pa");
-  display.print(F("Altitud: "));display.print(bmp.readAltitude(1013.25)); display.println(" m");
+  //display.print(F("Presion: "));display.print(bmp.readPressure());display.println(" Pa");
+  //display.print(F("Altitud: "));display.print(bmp.readAltitude(1013.25)); display.println(" m");
 
   //display.println("-------------------");
-  display.print("Luz: "); display.print(voltageLDR); display.println(" V");
-  display.print("H. Suelo: "); display.print(soilPercentage); display.println(" %");
+  //display.print("Luz: "); display.print(voltageLDR); display.println(" V");
+  //display.print("H. Suelo: "); display.print(soilPercentage); display.println(" %");
 
-  display.display();
+  //display.display();
+  //delay(2000);
+
+  // Si se presiona el botón, activamos la pantalla por 1 minuto
+  if (digitalRead(BUTTON_PIN) == LOW && !oledActive) {
+    oledActive = true;
+    oledOnTime = millis();
+    display.ssd1306_command(SSD1306_DISPLAYON);  // Encender OLED
+  }
+
+  // Si está activa y ya pasó un minuto, la apagamos
+  if (oledActive && (millis() - oledOnTime > 30000)) {
+    oledActive = false;
+    display.clearDisplay();
+    display.display();
+    display.ssd1306_command(SSD1306_DISPLAYOFF);  // Apagar OLED
+  }
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    Serial.println("Botón presionado!");
+  } else {
+    Serial.println("Botón suelto");
+  }
+  // Solo mostrar info en la OLED si está activa
+  if (oledActive) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+
+    display.print("Temp: "); display.print((temperatureDHT + bmp.readTemperature()) / 2); display.println("C");
+
+    display.print("Hum: "); display.print(humidityDHT); display.println(" %");
+
+    display.print(F("Presion: ")); display.print(bmp.readPressure()); display.println(" Pa");
+    display.print(F("Altitud: ")); display.print(bmp.readAltitude(1013.25)); display.println(" m");
+
+    display.print("Luz: "); display.print(voltageLDR); display.println(" V");
+    display.print("H. Suelo: "); display.print(soilPercentage); display.println(" %");
+
+    display.display();
+  }
   delay(2000);
+
 }
