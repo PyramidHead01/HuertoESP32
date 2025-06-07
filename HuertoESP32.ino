@@ -5,7 +5,7 @@
 #include <SPI.h>
 #include <Adafruit_BMP280.h>
 
-//TELEGRAM
+// TELEGRAM
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
@@ -13,33 +13,128 @@
 WiFiClientSecure client;
 UniversalTelegramBot bot(BOT_TOKEN, client);
 
+// Tiempo NTP para saber la hora
+#include "time.h"
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 3600;         // España GMT+1
+const int daylightOffset_sec = 3600;     // +1h en verano
 
-// Definir pines
-#define DHTPIN 4       // GPIO4 para el DHT22
-#define DHTTYPE DHT22  // Tipo de sensor
-#define LDR_PIN 36     // GPIO36 para el LDR
-#define SOIL_PIN 34    // GPIO34 para el sensor de humedad del suelo
-#define BUTTON_PIN 15  // GPIO15
+// Pines
+#define DHTPIN 4      // DHT22
+#define DHTTYPE DHT22 // Tipo de sensor
+#define LDR_PIN 36    // LDR
+#define SOIL_PIN 34   // Sensor de humedad del suelo
+#define BUTTON_PIN 33 // GPIO33
+#define BATT_PIN 35   // Leer estado bateria
+#define LED_VERDE    16
+#define LED_AMARILLO 17
+#define LED_ROJO     18
 
-
-// Dimensiones de la pantalla OLED
+// OLED
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-// Para encender apagar la oled
-unsigned long oledOnTime = 0;
-bool oledActive = false;
-
-Adafruit_BMP280 bmp; // I2C
-
-// Instancia del sensor DHT y pantalla OLED
-DHT dht(DHTPIN, DHTTYPE);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+bool oledActive = false;
+unsigned long oledOnTime = 0;
+
+// Sensores
+DHT dht(DHTPIN, DHTTYPE);
+Adafruit_BMP280 bmp;
+
+// Rango de horas de funcionamiento (18:00 a 23:59)
+const int activeHourStart = 6;
+const int activeHourEnd = 23;
+
+// Datos guardados
+float tempFinal = 0;
+float humidityDHT = 0;
+float pressure = 0;
+float altitude = 0;
+float voltageLDR = 0;
+float soilPercentage = 0;
+int porcBateria;
+
+
+
+float leerVoltajeBateria() {
+  int raw = analogRead(BATT_PIN);
+  float voltaje = raw * (3.3 / 4095.0); // Convierte a voltaje ADC
+  voltaje = voltaje * 2; // Porque el divisor de voltaje divide entre 2
+  return voltaje;
+}
+
+int porcentajeBateria(float voltaje) {
+  // Ajusta los valores para tu batería LiPo de 1 celda (3.0V = 0%, 4.2V = 100%)
+  if (voltaje >= 4.2) return 100;
+  if (voltaje <= 3.0) return 0;
+  return (int)((voltaje - 3.0) * 100.0 / (4.2 - 3.0));
+}
+
+void mostrarEstadoBateria(int porcentaje) {
+  digitalWrite(LED_VERDE, LOW);
+  digitalWrite(LED_AMARILLO, LOW);
+  digitalWrite(LED_ROJO, LOW);
+
+  if (porcentaje >= 75) {
+    digitalWrite(LED_VERDE, HIGH);
+  } else if (porcentaje >= 30) {
+    digitalWrite(LED_AMARILLO, HIGH);
+  } else {
+    digitalWrite(LED_ROJO, HIGH);
+  }
+}
+
+void mostrarDatosEnOLED(){
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE); // ← NECESARIO
+  display.setCursor(0, 0);
+  display.setTextSize(1);
+  display.print("Temp: "); display.print(tempFinal); display.println(" C");
+  display.print("Hum: "); display.print(humidityDHT); display.println(" %");
+  display.print("Presion: "); display.print(pressure); display.println(" Pa");
+  display.print("Altitud: "); display.print(altitude); display.println(" m");
+  display.print("Luz: "); display.print(voltageLDR); display.println(" V");
+  display.print("Suelo: "); display.print(soilPercentage); display.println(" %");
+  display.print("Bateria: "); display.print(porcBateria); display.println(" %");
+  display.print("OLED se apagara en 30 seg");
+  display.display();
+  delay(30000); // 30 segundos de OLED encendida
+  display.clearDisplay();
+  display.display();
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
+}
 
 void setup() {
   Serial.begin(115200);
   dht.begin();
 
-  //CONECTARSE A WIFI
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
+    Serial.println("Despertado por botón. Mostrando OLED.");
+
+    delay(100);  // <-- Dale tiempo a I2C
+
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+      Serial.println("No se encontró la pantalla OLED");
+      while (1);
+    }
+    else{
+      Serial.println("Encontrado la pantalla OLED");
+    }
+
+    delay(2000); // Para que los sensores esten correctamente cargados (especialmente el dht)
+
+    medirSensores();
+    mostrarDatosEnOLED();
+    mostrarEstadoBateria(porcBateria);
+    entrarEnDeepSleep();
+    return;
+  }
+  
+  // Conexión WiFi
   WiFi.mode(WIFI_STA);
   WiFi.begin(SECRET_SSID, SECRET_PASS);
   client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
@@ -47,128 +142,112 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("");
-  Serial.println("WiFi connected"); 
+  Serial.println("\nWiFi connected");
 
-  //LANZANDO MENSAJE DE TELEGRAM
-  bool success = bot.sendMessage(CHAT_ID, "Hello World!");
-  if (success) {
-    Serial.println("Mensaje enviado!");
-  } else {
-    Serial.println("Error al enviar mensaje");
+  // Obtener hora del servidor NTP
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Error al obtener la hora");
+    entrarEnDeepSleep();
   }
 
-  pinMode(BUTTON_PIN, INPUT_PULLUP);  // Botón con pull-up interno
+  int horaActual = timeinfo.tm_hour;
+  Serial.printf("Hora actual: %02d:%02d\n", horaActual, timeinfo.tm_min);
 
-  // Inicializar OLED
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("Error: No se encontró la pantalla OLED");
-    while (1);
-  }
+  medirSensores();
+  enviarTelegram();
 
-  //BMP
-  while ( !Serial ) delay(100);   // wait for native usb
-  unsigned status;
-  status = bmp.begin();
-  if (!status) {
-    Serial.println(F("Could not find a valid BMP280 sensor, check wiring or "
-                      "try a different address!"));
-    Serial.print("SensorID was: 0x"); Serial.println(bmp.sensorID(),16);
-    Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
-    Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
-    Serial.print("        ID of 0x60 represents a BME 280.\n");
-    Serial.print("        ID of 0x61 represents a BME 680.\n");
-    while (1) delay(10);
-  }
-  /* Default settings from datasheet. */
-  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
-                  Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
-                  Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
-                  Adafruit_BMP280::FILTER_X16,      /* Filtering. */
-                  Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
+  entrarEnDeepSleep();
 
-  // Mensaje inicial en la OLED
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(10, 10);
-  display.println("Bienvenido Sr.Hugo");
-  display.println("LISTO archivos");
-  display.display();
-  delay(2000);
-  display.println("LISTO duendes magicos");
-  display.display();
-  delay(2000);
-  display.println("LISTO reservas de orin");
-  display.display();
-  delay(2000);
-  display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
 void loop() {
-  // Leer sensores
-  float temperatureDHT = dht.readTemperature();
-  float humidityDHT = dht.readHumidity();
+  // No se usa, todo ocurre en setup
+}
 
-  int ldrValue = analogRead(LDR_PIN);
-  float voltageLDR = ldrValue * (3.3 / 4095.0);
-
-  int soilValue = analogRead(SOIL_PIN);
-  float soilPercentage = map(soilValue, 4095, 1000, 0, 100); // Ajustar según calibración
-  soilPercentage = constrain(soilPercentage, 0, 100); // Limitar el valor a un rango de 0-100 para evitar lecturas mayores a 100
-
-  // Mostrar en el monitor serie
-  Serial.println("=== Datos del Huerto ===");
-  Serial.print("Temp: "); Serial.print((temperatureDHT+bmp.readTemperature())/2); Serial.println("°C");
-  //DHT
-  //Serial.print("DHT22 - Temp: "); Serial.print(temperatureDHT); Serial.println("°C");
-  Serial.print("DHT22 - Humedad: "); Serial.print(humidityDHT); Serial.println("%");
-  //BMP
-  //Serial.print(F("Temperature = "));Serial.print(bmp.readTemperature());Serial.println(" *C");
-  Serial.print(F("Pressure = "));Serial.print(bmp.readPressure());Serial.println(" Pa");
-  Serial.print(F("Approx altitude = "));Serial.print(bmp.readAltitude(1013.25)); Serial.println(" m");
-  //LDR
-  Serial.print("Luminosidad (voltios): "); Serial.println(voltageLDR);
-  Serial.print("Humedad del suelo: "); Serial.print(soilPercentage); Serial.println("%");
-  Serial.println("=========================");
-
-  //OLED
-  // Si se presiona el botón, activamos la pantalla por 1 minuto
-  if (digitalRead(BUTTON_PIN) == LOW && !oledActive) {
-    oledActive = true;
-    oledOnTime = millis();
-    display.ssd1306_command(SSD1306_DISPLAYON);  // Encender OLED
+void BMP(){
+  // BMP
+  if (!bmp.begin()) {
+    Serial.println("No se encontró el BMP280");
+    while (1) delay(10);
   }
-  // Si está activa y ya pasó un minuto, la apagamos
-  if (oledActive && (millis() - oledOnTime > 30000)) {
-    oledActive = false;
-    display.clearDisplay();
-    display.display();
-    display.ssd1306_command(SSD1306_DISPLAYOFF);  // Apagar OLED
-  }
-  if (digitalRead(BUTTON_PIN) == LOW) {
-    Serial.println("Botón presionado!");
+  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
+                  Adafruit_BMP280::SAMPLING_X2,
+                  Adafruit_BMP280::SAMPLING_X16,
+                  Adafruit_BMP280::FILTER_X16,
+                  Adafruit_BMP280::STANDBY_MS_500);
+}
+
+void medirSensores() {
+  
+  //Para que los sensores esten correctamente listos
+  delay(3000);
+  
+  BMP()
+  
+  // Temperatura
+  float tempDHT = dht.readTemperature();
+  float tempBMP = bmp.readTemperature();
+
+  if (!isnan(tempDHT) && !isnan(tempBMP)) {
+    tempFinal = (tempDHT + tempBMP) / 2;
+  } else if (!isnan(tempDHT)) {
+    Serial.println("BMP Fallo al iniciarse");
+    tempFinal = tempDHT;
+  } else if (!isnan(tempBMP)) {
+    Serial.println("DHT Fallo al iniciarse");
+    tempFinal = tempBMP;
   } else {
-    Serial.println("Botón suelto");
+    Serial.println("DHT y BMP Fallaron al iniciarse");
+    tempFinal = NAN;  // Ambos fallaron
   }
-  // Solo mostrar info en la OLED si está activa
-  if (oledActive) {
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.setTextSize(1);
+  
+  // Humeadad
+  humidityDHT = dht.readHumidity();
+  
+  // Presion
+  pressure = bmp.readPressure();
 
-    display.print("Temp: "); display.print((temperatureDHT + bmp.readTemperature()) / 2); display.println("C");
+  // Altitud
+  altitude = bmp.readAltitude(1013.25);
 
-    display.print("Hum: "); display.print(humidityDHT); display.println(" %");
+  // LDR
+  voltageLDR = analogRead(LDR_PIN) * (3.3 / 4095.0);
+  
+  // Humedad suelo
+  int soilValue = analogRead(SOIL_PIN);
+  soilPercentage = map(soilValue, 4095, 1000, 0, 100);
+  soilPercentage = constrain(soilPercentage, 0, 100);
+  
+  // Bateria
+  float voltBateria = leerVoltajeBateria();
+  porcBateria = porcentajeBateria(voltBateria);
 
-    display.print(F("Presion: ")); display.print(bmp.readPressure()); display.println(" Pa");
-    display.print(F("Altitud: ")); display.print(bmp.readAltitude(1013.25)); display.println(" m");
+  Serial.println("Lectura completa.");
+}
 
-    display.print("Luz: "); display.print(voltageLDR); display.println(" V");
-    display.print("H. Suelo: "); display.print(soilPercentage); display.println(" %");
+void enviarTelegram() {
+  String mensaje = "🌿 *Reporte Huerto:*\n";
+  mensaje += "🌡️ Temp: " + String(tempFinal) + " °C\n";
+  mensaje += "💧 Humedad: " + String(humidityDHT) + " %\n";
+  mensaje += "📈 Presion: " + String(pressure) + " Pa\n";
+  mensaje += "🗻 Altitud: " + String(altitude) + " m\n";
+  mensaje += "🔆 Luz: " + String(voltageLDR) + " V\n";
+  mensaje += "🌱 Suelo: " + String(soilPercentage) + " %\n";
+  mensaje += "🔋 Bateria: " + String(porcBateria) + " %\n";
 
-    display.display();
+  bool ok = bot.sendMessage(CHAT_ID, mensaje, "Markdown");
+  if (ok) {
+    Serial.println("Mensaje Telegram enviado");
+  } else {
+    Serial.println("Error al enviar por Telegram");
   }
-  delay(2000);
+}
 
+void entrarEnDeepSleep() {
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0); // 0 = LOW activ
+  Serial.println("Entrando en Deep Sleep por 1 hora...");
+  esp_sleep_enable_timer_wakeup(3600000000ULL); // 1 hora en microsegundos
+  esp_deep_sleep_start();
 }
