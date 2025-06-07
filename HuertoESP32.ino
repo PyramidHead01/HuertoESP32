@@ -167,7 +167,6 @@ void loop() {
 }
 
 void BMP(){
-  // BMP
   if (!bmp.begin()) {
     Serial.println("No se encontró el BMP280");
     while (1) delay(10);
@@ -184,7 +183,7 @@ void medirSensores() {
   //Para que los sensores esten correctamente listos
   delay(3000);
   
-  BMP()
+  BMP();
   
   // Temperatura
   float tempDHT = dht.readTemperature();
@@ -246,6 +245,11 @@ void enviarTelegram() {
 }
 
 void entrarEnDeepSleep() {
+
+  digitalWrite(LED_VERDE, LOW);
+  digitalWrite(LED_AMARILLO, LOW);
+  digitalWrite(LED_ROJO, LOW);
+
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0); // 0 = LOW activ
   Serial.println("Entrando en Deep Sleep por 1 hora...");
   esp_sleep_enable_timer_wakeup(3600000000ULL); // 1 hora en microsegundos
