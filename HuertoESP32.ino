@@ -71,15 +71,19 @@ int porcentajeBateria(float voltaje) {
 }
 
 void mostrarEstadoBateria(int porcentaje) {
+  
   digitalWrite(LED_VERDE, LOW);
   digitalWrite(LED_AMARILLO, LOW);
   digitalWrite(LED_ROJO, LOW);
 
   if (porcentaje >= 75) {
+    Serial.println("LED VERDE");
     digitalWrite(LED_VERDE, HIGH);
   } else if (porcentaje >= 30) {
+    Serial.println("LED AMARILLO");
     digitalWrite(LED_AMARILLO, HIGH);
   } else {
+    Serial.println("LED ROJO");
     digitalWrite(LED_ROJO, HIGH);
   }
 }
@@ -108,7 +112,10 @@ void mostrarDatosEnOLED(){
 
 void setup() {
   Serial.begin(115200);
-  dht.begin();
+
+  pinMode(LED_VERDE, OUTPUT);
+  pinMode(LED_AMARILLO, OUTPUT);
+  pinMode(LED_ROJO, OUTPUT);
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
@@ -125,11 +132,11 @@ void setup() {
       Serial.println("Encontrado la pantalla OLED");
     }
 
-    delay(2000); // Para que los sensores esten correctamente cargados (especialmente el dht)
-
-    medirSensores();
-    mostrarDatosEnOLED();
+    bateria();
     mostrarEstadoBateria(porcBateria);
+
+    medirSensores(false);
+    mostrarDatosEnOLED();
     entrarEnDeepSleep();
     return;
   }
@@ -155,8 +162,10 @@ void setup() {
   int horaActual = timeinfo.tm_hour;
   Serial.printf("Hora actual: %02d:%02d\n", horaActual, timeinfo.tm_min);
 
-  medirSensores();
+  medirSensores(true);
   enviarTelegram();
+
+  mostrarEstadoBateria(porcBateria);
 
   entrarEnDeepSleep();
 
@@ -164,6 +173,11 @@ void setup() {
 
 void loop() {
   // No se usa, todo ocurre en setup
+}
+
+void bateria(){
+  float voltBateria = leerVoltajeBateria();
+  porcBateria = porcentajeBateria(voltBateria);
 }
 
 void BMP(){
@@ -178,17 +192,18 @@ void BMP(){
                   Adafruit_BMP280::STANDBY_MS_500);
 }
 
-void medirSensores() {
+void medirSensores(bool calcularBateria) {
   
-  //Para que los sensores esten correctamente listos
+  // Para que los sensores esten correctamente listos
   delay(3000);
   
+  // Preparar BMP y DHT
   BMP();
+  dht.begin();
   
   // Temperatura
   float tempDHT = dht.readTemperature();
   float tempBMP = bmp.readTemperature();
-
   if (!isnan(tempDHT) && !isnan(tempBMP)) {
     tempFinal = (tempDHT + tempBMP) / 2;
   } else if (!isnan(tempDHT)) {
@@ -220,8 +235,9 @@ void medirSensores() {
   soilPercentage = constrain(soilPercentage, 0, 100);
   
   // Bateria
-  float voltBateria = leerVoltajeBateria();
-  porcBateria = porcentajeBateria(voltBateria);
+  if (calcularBateria){
+    bateria();
+  }
 
   Serial.println("Lectura completa.");
 }
@@ -244,11 +260,13 @@ void enviarTelegram() {
   }
 }
 
+
+
 void entrarEnDeepSleep() {
 
-  digitalWrite(LED_VERDE, LOW);
-  digitalWrite(LED_AMARILLO, LOW);
-  digitalWrite(LED_ROJO, LOW);
+  //digitalWrite(LED_VERDE, LOW);
+  //digitalWrite(LED_AMARILLO, LOW);
+  //digitalWrite(LED_ROJO, LOW);
 
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0); // 0 = LOW activ
   Serial.println("Entrando en Deep Sleep por 1 hora...");
